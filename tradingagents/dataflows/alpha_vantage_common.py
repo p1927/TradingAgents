@@ -27,12 +27,17 @@ class AlphaVantageNotConfiguredError(VendorNotConfiguredError):
 
 def get_api_key() -> str:
     """Retrieve the API key for Alpha Vantage from environment variables."""
-    api_key = os.getenv("ALPHA_VANTAGE_API_KEY")
-    if not api_key:
-        raise AlphaVantageNotConfiguredError(
-            "ALPHA_VANTAGE_API_KEY environment variable is not set."
-        )
-    return api_key
+    try:
+        from trade_integrations.tiered_api.registry import resolve_credential
+
+        return resolve_credential("alpha_vantage")
+    except Exception:
+        api_key = os.getenv("ALPHA_VANTAGE_API_KEY") or os.getenv("ALPHAVANTAGE_API_KEY")
+        if not api_key:
+            raise AlphaVantageNotConfiguredError(
+                "ALPHA_VANTAGE_API_KEY environment variable is not set."
+            )
+        return api_key
 
 def format_datetime_for_api(date_input) -> str:
     """Convert various date formats to YYYYMMDDTHHMM format required by Alpha Vantage API."""
@@ -65,51 +70,54 @@ def _make_api_request(function_name: str, params: dict) -> dict | str:
     Raises:
         AlphaVantageRateLimitError: When API rate limit is exceeded
     """
-    # Create a copy of params to avoid modifying the original
+    from trade_integrations.tiered_api import TieredRequest, tiered_fetch
+    from trade_integrations.tiered_api.errors import TieredApiBudgetExhausted
+
     api_params = params.copy()
     api_params.update({
         "function": function_name,
-        "apikey": get_api_key(),
         "source": "trading_agents",
     })
 
-    # Handle entitlement parameter if present in params or global variable
     current_entitlement = globals().get('_current_entitlement')
     entitlement = api_params.get("entitlement") or current_entitlement
 
     if entitlement:
         api_params["entitlement"] = entitlement
     elif "entitlement" in api_params:
-        # Remove entitlement if it's None or empty
         api_params.pop("entitlement", None)
 
-    response = requests.get(API_BASE_URL, params=api_params, timeout=REQUEST_TIMEOUT)
-    response.raise_for_status()
+    req = TieredRequest(url=API_BASE_URL, params=dict(api_params))
 
-    response_text = response.text
+    def _validate_response_text(response_text: str) -> str:
+        try:
+            response_json = json.loads(response_text)
+        except json.JSONDecodeError:
+            return response_text
 
-    # Error responses are JSON; data responses are usually CSV (or data-keyed
-    # JSON). A non-JSON body is normal data.
-    try:
-        response_json = json.loads(response_text)
-    except json.JSONDecodeError:
+        notice = response_json.get("Information") or response_json.get("Note")
+        if notice:
+            low = notice.lower()
+            if any(m in low for m in ("rate limit", "requests per day", "call frequency", "premium")):
+                raise AlphaVantageRateLimitError(f"Alpha Vantage rate limit exceeded: {notice}")
+            if "api key" in low or "apikey" in low:
+                raise AlphaVantageNotConfiguredError(
+                    f"Alpha Vantage API key invalid or missing: {notice}"
+                )
         return response_text
 
-    # Alpha Vantage reports problems via "Information" / "Note". Classify so a
-    # genuine rate limit and an invalid/missing key aren't conflated (#991):
-    # rate-limit phrasing is checked first because those notices also mention
-    # "API key" ("your API key ... 25 requests per day").
-    notice = response_json.get("Information") or response_json.get("Note")
-    if notice:
-        low = notice.lower()
-        if any(m in low for m in ("rate limit", "requests per day", "call frequency", "premium")):
-            raise AlphaVantageRateLimitError(f"Alpha Vantage rate limit exceeded: {notice}")
-        if "api key" in low or "apikey" in low:
-            # Reuse the existing "not configured" error so a bad key surfaces as
-            # a real, actionable failure rather than a mislabeled rate limit (#991).
-            raise AlphaVantageNotConfiguredError(f"Alpha Vantage API key invalid or missing: {notice}")
+    def _fetch_raw() -> str:
+        call_params = api_params.copy()
+        call_params["apikey"] = get_api_key()
+        response = requests.get(API_BASE_URL, params=call_params, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        return _validate_response_text(response.text)
 
-    return response_text
+    try:
+        result = tiered_fetch("alpha_vantage", req, _fetch_raw)
+        return result.data
+    except TieredApiBudgetExhausted as exc:
+        raise AlphaVantageRateLimitError(str(exc)) from exc
 
 
 

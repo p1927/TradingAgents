@@ -30,7 +30,8 @@ def _patched_get(body, capture=None):
 
 
 @pytest.mark.unit
-def test_request_passes_timeout(monkeypatch):
+def test_request_passes_timeout(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRADE_STACK_HUB_DIR", str(tmp_path))
     captured = {}
     monkeypatch.setattr(av.requests, "get", _patched_get("Date,Close\n2025-01-02,1.0", captured))
     av._make_api_request("TIME_SERIES_DAILY", {"symbol": "AAPL"})
@@ -38,7 +39,8 @@ def test_request_passes_timeout(monkeypatch):
 
 
 @pytest.mark.unit
-def test_rate_limit_detected(monkeypatch):
+def test_rate_limit_detected(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRADE_STACK_HUB_DIR", str(tmp_path))
     body = '{"Information": "Our standard API rate limit is 25 requests per day. ... your API key ..."}'
     monkeypatch.setattr(av.requests, "get", _patched_get(body))
     with pytest.raises(av.AlphaVantageRateLimitError):
@@ -46,7 +48,8 @@ def test_rate_limit_detected(monkeypatch):
 
 
 @pytest.mark.unit
-def test_invalid_key_not_mislabeled_as_rate_limit(monkeypatch):
+def test_invalid_key_not_mislabeled_as_rate_limit(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRADE_STACK_HUB_DIR", str(tmp_path))
     # AV's invalid-key notice mentions "API key"; it must NOT be treated as a
     # (transient) rate limit, but surface as a real configuration error (#991).
     body = ('{"Information": "the parameter apikey is invalid or missing. '
