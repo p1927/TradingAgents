@@ -30,6 +30,7 @@ class TestMinimaxReasoningSplit:
         # top-level params and rejects unknown ones like reasoning_split (#826).
         payload = _client()._get_request_payload([HumanMessage(content="hi")])
         assert payload.get("extra_body", {}).get("reasoning_split") is True
+        assert payload.get("extra_body", {}).get("thinking") == {"type": "adaptive"}
         assert "reasoning_split" not in payload  # never top-level
 
     def test_non_reasoning_minimax_does_not_inject_reasoning_split(self):
@@ -41,6 +42,20 @@ class TestMinimaxReasoningSplit:
             )
             assert "reasoning_split" not in payload
             assert "reasoning_split" not in payload.get("extra_body", {})
+
+    def test_m3_maps_max_tokens_to_max_completion_tokens(self):
+        client = _client("MiniMax-M3")
+        payload = client._get_request_payload(
+            [HumanMessage(content="hi")],
+            max_tokens=2048,
+        )
+        assert "max_tokens" not in payload
+        assert payload["max_completion_tokens"] == 2048
+
+    def test_m3_default_completion_tokens_when_omitted(self, monkeypatch):
+        monkeypatch.setenv("MINIMAX_DEFAULT_COMPLETION_TOKENS", "8192")
+        payload = _client("MiniMax-M3")._get_request_payload([HumanMessage(content="hi")])
+        assert payload["max_completion_tokens"] == 8192
 
 
 @pytest.mark.unit

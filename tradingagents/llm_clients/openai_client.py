@@ -153,13 +153,30 @@ class MinimaxChatOpenAI(NormalizedChatOpenAI):
     def _get_request_payload(self, input_, *, stop=None, **kwargs):
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
         if get_capabilities(self.model_name).requires_reasoning_split:
-            # Pass via extra_body, not as a top-level kwarg: the openai SDK
-            # (>=1.56) validates top-level params against Completions.create
-            # and rejects unknown ones like reasoning_split (#826). extra_body
-            # is forwarded into the request body untouched.
-            extra_body = payload.setdefault("extra_body", {})
-            extra_body.setdefault("reasoning_split", True)
+            _apply_minimax_openai_payload(payload)
         return payload
+
+
+def _default_minimax_completion_tokens() -> int:
+    try:
+        return max(256, int(os.getenv("MINIMAX_DEFAULT_COMPLETION_TOKENS", "4096")))
+    except ValueError:
+        return 4096
+
+
+def _apply_minimax_openai_payload(payload: dict[str, Any]) -> None:
+    """Map deprecated max_tokens and inject MiniMax-M3 reasoning defaults."""
+    if payload.get("max_completion_tokens") is None:
+        if payload.get("max_tokens") is not None:
+            payload["max_completion_tokens"] = payload.pop("max_tokens")
+        else:
+            payload["max_completion_tokens"] = _default_minimax_completion_tokens()
+    else:
+        payload.pop("max_tokens", None)
+
+    extra_body = payload.setdefault("extra_body", {})
+    extra_body.setdefault("reasoning_split", True)
+    extra_body.setdefault("thinking", {"type": "adaptive"})
 
 
 # Kwargs forwarded from user config to ChatOpenAI
