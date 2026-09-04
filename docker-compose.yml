@@ -1,8 +1,20 @@
+# Docker's default json-file log driver has no size cap on its own; x-logging
+# bounds every service's stdout/stderr log here so a runaway process can't fill
+# the host disk unnoticed (see the Trade repo's docker-compose.stack.yml for
+# the same fix, and the 2026-09-04 stock-simulator.log 23.6GB incident that
+# prompted the broader audit).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   tradingagents:
     build: .
     env_file:
       - .env
+    logging: *default-logging
     volumes:
       - tradingagents_data:/home/appuser/.tradingagents
     tty: true
@@ -10,6 +22,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    logging: *default-logging
     volumes:
       - ollama_data:/root/.ollama
     profiles:
@@ -22,6 +35,7 @@ services:
     environment:
       - TRADINGAGENTS_LLM_PROVIDER=ollama
       - OLLAMA_BASE_URL=http://ollama:11434/v1
+    logging: *default-logging
     volumes:
       - tradingagents_data:/home/appuser/.tradingagents
     depends_on:
