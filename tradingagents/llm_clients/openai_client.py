@@ -292,6 +292,9 @@ class OpenAIClient(BaseLLMClient):
 
     def get_llm(self) -> Any:
         """Return a configured ChatOpenAI instance, driven by the provider registry."""
+        from .openrouter_gate import assert_not_openrouter
+
+        assert_not_openrouter(self.provider)
         self.warn_if_unknown_model()
         llm_kwargs = {"model": self.model}
         spec = OPENAI_COMPATIBLE_PROVIDERS.get(self.provider)
