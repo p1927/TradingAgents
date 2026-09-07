@@ -1,5 +1,9 @@
 
+import logging
+
 from .base_client import BaseLLMClient
+
+logger = logging.getLogger(__name__)
 
 
 def create_llm_client(
@@ -80,8 +84,30 @@ def _instrument_llm_client(client: BaseLLMClient) -> BaseLLMClient:
             except ImportError:
                 return original_invoke(input, config=config, **kwargs)
 
-        llm.invoke = invoke  # type: ignore[method-assign]
-        llm._trade_obs_wrapped = True  # type: ignore[attr-defined]
+        # LangChain chat models are pydantic models, and pydantic v2 rejects
+        # assignment to an undeclared field -- `llm.invoke = invoke` raises
+        # ValueError: "MinimaxChatOpenAI" object has no field "invoke".  The
+        # caller in research_prefetch.py wraps the debate in a broad
+        # `except Exception` and logs at WARNING, so this did not surface as a
+        # crash: it silently skipped the agent's entire bootstrap debate, for
+        # every provider, not just MiniMax.  `object.__setattr__` bypasses
+        # pydantic's validating `__setattr__` and shadows the bound method via
+        # the instance dict, which is what the original assignment intended.
+        # See .claude/backlog/items/2026-09-07-minimax-adapter-missing-invoke-kills-debate-prefetch.md
+        try:
+            object.__setattr__(llm, "invoke", invoke)
+            object.__setattr__(llm, "_trade_obs_wrapped", True)
+        except Exception:  # noqa: BLE001
+            # Telemetry must never cost us the debate itself.  Returning the
+            # un-instrumented client loses Tier 0 LLM events for this call and
+            # keeps the reasoning working, which is the right trade.
+            logger.warning(
+                "LLM observability instrumentation could not be attached to %s; "
+                "continuing without Tier 0 LLM events for this client",
+                type(llm).__name__,
+                exc_info=True,
+            )
+            return llm
         return llm
 
     client.get_llm = get_llm  # type: ignore[method-assign]
