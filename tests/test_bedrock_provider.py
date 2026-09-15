@@ -45,6 +45,11 @@ def _capture_kwargs(monkeypatch):
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
+        # The factory's Tier 0 wrapper reads ``llm.invoke`` when get_llm() runs,
+        # so the double needs the same method a real chat model has.
+        def invoke(self, input, config=None, **kwargs):
+            raise AssertionError("_FakeChat.invoke is not expected to be called")
+
     monkeypatch.setattr(bc, "_bedrock_class", lambda: _FakeChat)
     return captured
 
