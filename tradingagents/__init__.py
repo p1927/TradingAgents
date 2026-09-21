@@ -1,4 +1,5 @@
 import contextlib
+import os
 import warnings
 
 # Load .env files at package import so DEFAULT_CONFIG's env-var overlay
@@ -8,11 +9,14 @@ import warnings
 # the project's .env instead of stepping up from site-packages.
 # load_dotenv defaults to override=False, so it never clobbers values
 # the caller has already exported.
+# Fork: a host that owns its own env loading (Trade, whose worktrees would otherwise climb
+# from the cwd into the main checkout's .env) sets TRADINGAGENTS_SKIP_DOTENV=1.
 try:
     from dotenv import find_dotenv, load_dotenv
 
-    load_dotenv(find_dotenv(usecwd=True))
-    load_dotenv(find_dotenv(".env.enterprise", usecwd=True), override=False)
+    if not os.environ.get("TRADINGAGENTS_SKIP_DOTENV"):
+        load_dotenv(find_dotenv(usecwd=True))
+        load_dotenv(find_dotenv(".env.enterprise", usecwd=True), override=False)
 except ImportError:
     pass
 
