@@ -9,7 +9,12 @@ import json
 
 import pytest
 
-import tradingagents.dataflows.alpha_vantage_common as av
+# _make_api_request routes through Trade's tiered_api, so these tests can only
+# run inside the Trade monorepo (where Trade's CI runs them); the fork's own CI
+# skips them instead of failing on an import it can never satisfy.
+pytest.importorskip("trade_integrations")
+
+import tradingagents.dataflows.alpha_vantage_common as av  # noqa: E402
 import tradingagents.dataflows.alpha_vantage_fundamentals as avf
 
 

@@ -31,12 +31,12 @@ def get_api_key() -> str:
         from trade_integrations.tiered_api.registry import resolve_credential
 
         return resolve_credential("alpha_vantage")
-    except Exception:
+    except Exception as exc:
         api_key = os.getenv("ALPHA_VANTAGE_API_KEY") or os.getenv("ALPHAVANTAGE_API_KEY")
         if not api_key:
             raise AlphaVantageNotConfiguredError(
                 "ALPHA_VANTAGE_API_KEY environment variable is not set."
-            )
+            ) from exc
         return api_key
 
 def format_datetime_for_api(date_input) -> str:
