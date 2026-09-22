@@ -9,21 +9,16 @@ import warnings
 # the project's .env instead of stepping up from site-packages.
 # load_dotenv defaults to override=False, so it never clobbers values
 # the caller has already exported.
-#
-# TRADINGAGENTS_SKIP_DOTENV opts out of the usecwd=True climb: a caller that already loaded
-# its own correct .env (Trade's trade_integrations/__init__.py sets this before importing
-# tradingagents) knows better than a cwd-upward search, which in a git worktree with no .env
-# of its own silently climbs to and loads the MAIN checkout's .env instead, repointing unset
-# vars (TRADE_STACK_HUB_DIR, NSE_REPLAY_DATA_ROOT, ...) at the wrong tier's data. See
-# Trade's .claude/backlog/items/2026-09-18-tradingagents-eager-dotenv-repoints-env-vars-in-worktrees.md.
-if os.environ.get("TRADINGAGENTS_SKIP_DOTENV", "").strip().lower() not in ("1", "true", "yes"):
-    try:
-        from dotenv import find_dotenv, load_dotenv
+# Fork: a host that owns its own env loading (Trade, whose worktrees would otherwise climb
+# from the cwd into the main checkout's .env) sets TRADINGAGENTS_SKIP_DOTENV=1.
+try:
+    from dotenv import find_dotenv, load_dotenv
 
+    if not os.environ.get("TRADINGAGENTS_SKIP_DOTENV"):
         load_dotenv(find_dotenv(usecwd=True))
         load_dotenv(find_dotenv(".env.enterprise", usecwd=True), override=False)
-    except ImportError:
-        pass
+except ImportError:
+    pass
 
 # langchain-core 1.3.3 calls surface_langchain_deprecation_warnings() in
 # its own __init__, which prepends default-action filters for its
