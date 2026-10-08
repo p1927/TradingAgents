@@ -64,6 +64,27 @@ class AlphaVantageRateLimitError(VendorRateLimitError):
     """Raised when the Alpha Vantage API rate limit is exceeded."""
     pass
 
+# D381: every tiered_api call declares its own freshness. Fundamentals/insider reports change
+# quarterly -> the source TTL (None); prices, indicators and news sentiment are same-day history -> 12h.
+# A function missing here raises KeyError rather than silently inheriting a freshness.
+_MAX_AGE_HOURS: dict[str, float | None] = {
+    "OVERVIEW": None,
+    "BALANCE_SHEET": None,
+    "CASH_FLOW": None,
+    "INCOME_STATEMENT": None,
+    "INSIDER_TRANSACTIONS": None,
+    "TIME_SERIES_DAILY": 12,
+    "TIME_SERIES_DAILY_ADJUSTED": 12,
+    "NEWS_SENTIMENT": 12,
+    "SMA": 12,
+    "EMA": 12,
+    "MACD": 12,
+    "RSI": 12,
+    "BBANDS": 12,
+    "ATR": 12,
+}
+
+
 def _make_api_request(function_name: str, params: dict) -> dict | str:
     """Helper function to make API requests and handle responses.
 
@@ -114,7 +135,9 @@ def _make_api_request(function_name: str, params: dict) -> dict | str:
         return _validate_response_text(response.text)
 
     try:
-        result = tiered_fetch("alpha_vantage", req, _fetch_raw)
+        result = tiered_fetch(
+            "alpha_vantage", req, _fetch_raw, max_age_hours=_MAX_AGE_HOURS[function_name]
+        )
         return result.data
     except TieredApiBudgetExhausted as exc:
         raise AlphaVantageRateLimitError(str(exc)) from exc

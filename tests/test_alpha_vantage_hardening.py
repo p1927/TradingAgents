@@ -102,3 +102,25 @@ def test_fundamentals_no_curr_date_passes_through(monkeypatch):
 def test_fundamentals_non_json_body_unchanged(monkeypatch):
     monkeypatch.setattr(avf, "_make_api_request", lambda fn, params: "not-json")
     assert avf.get_cashflow("AAPL", curr_date="2024-01-01") == "not-json"
+
+
+@pytest.mark.unit
+def test_every_function_declares_max_age_hours(monkeypatch, tmp_path):
+    """D381: the watcher stage failed with `tiered_fetch() missing max_age_hours`; each function
+    the dataflows call must have a declared freshness and reach tiered_fetch with it."""
+    import re
+    from pathlib import Path
+
+    called = set()
+    for f in Path(av.__file__).parent.glob("alpha_vantage_*.py"):
+        called |= set(re.findall(r'_make_api_request\(\s*"([A-Z_]+)"', f.read_text()))
+    assert called and called <= set(av._MAX_AGE_HOURS)
+
+    monkeypatch.setenv("TRADE_STACK_HUB_DIR", str(tmp_path))
+    monkeypatch.setattr(av.requests, "get", _patched_get("Date,Close\n2025-01-02,1.0"))
+    seen = {}
+    import trade_integrations.tiered_api as ta
+    real = ta.tiered_fetch
+    monkeypatch.setattr(ta, "tiered_fetch", lambda *a, **k: seen.update(k) or real(*a, **k))
+    av._make_api_request("OVERVIEW", {"symbol": "AAPL"})
+    assert "max_age_hours" in seen
