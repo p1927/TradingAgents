@@ -67,3 +67,19 @@ def test_plain_assignment_would_still_fail(monkeypatch):
     )
     with pytest.raises(ValueError, match="has no field"):
         llm.invoke = lambda *a, **k: None
+
+
+def test_importerror_inside_the_model_call_is_not_retried():
+    """An ImportError from the model call itself must propagate once, not re-invoke the model."""
+    calls = []
+
+    def boom(*a, **k):
+        calls.append(1)
+        raise ImportError("lazy provider import failed")
+
+    llm = _make_llm()
+    object.__setattr__(llm, "invoke", boom)
+    instrumented = _instrument_llm_client(_Client(llm)).get_llm()
+    with pytest.raises(ImportError):
+        instrumented.invoke("prompt")
+    assert len(calls) == 1

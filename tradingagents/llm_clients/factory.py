@@ -73,16 +73,16 @@ def _instrument_llm_client(client: BaseLLMClient) -> BaseLLMClient:
         original_invoke = llm.invoke
 
         def invoke(input, config=None, **kwargs):
+            # Only the telemetry import is guarded: an ImportError raised INSIDE the model call
+            # (a lazy provider import) must propagate, not trigger a second paid call.
             try:
                 from trade_integrations.observability.hooks import llm_call_span
-
-                with llm_call_span(provider=provider, model=model, tier="debate") as meta:
-                    result = original_invoke(input, config=config, **kwargs)
-                    tool_calls = getattr(result, "tool_calls", None) or []
-                    meta["tool_calls"] = len(tool_calls)
-                    return result
             except ImportError:
                 return original_invoke(input, config=config, **kwargs)
+            with llm_call_span(provider=provider, model=model, tier="debate") as meta:
+                result = original_invoke(input, config=config, **kwargs)
+                meta["tool_calls"] = len(getattr(result, "tool_calls", None) or [])
+                return result
 
         # LangChain chat models are pydantic models, and pydantic v2 rejects
         # assignment to an undeclared field -- `llm.invoke = invoke` raises

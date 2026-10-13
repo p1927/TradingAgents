@@ -26,18 +26,15 @@ class AlphaVantageNotConfiguredError(VendorNotConfiguredError):
 
 
 def get_api_key() -> str:
-    """Retrieve the API key for Alpha Vantage from environment variables."""
-    try:
-        from trade_integrations.tiered_api.registry import resolve_credential
+    """Alpha Vantage key, resolved through Trade's tiered_api registry (the one place that
+    names the env vars). Not configured -> the vendor-router's "vendor unavailable" error."""
+    from trade_integrations.tiered_api.errors import TieredApiNotConfiguredError
+    from trade_integrations.tiered_api.registry import resolve_credential
 
+    try:
         return resolve_credential("alpha_vantage")
-    except Exception as exc:
-        api_key = os.getenv("ALPHA_VANTAGE_API_KEY") or os.getenv("ALPHAVANTAGE_API_KEY")
-        if not api_key:
-            raise AlphaVantageNotConfiguredError(
-                "ALPHA_VANTAGE_API_KEY environment variable is not set."
-            ) from exc
-        return api_key
+    except TieredApiNotConfiguredError as exc:
+        raise AlphaVantageNotConfiguredError(str(exc)) from exc
 
 def format_datetime_for_api(date_input) -> str:
     """Convert various date formats to YYYYMMDDTHHMM format required by Alpha Vantage API."""
@@ -92,7 +89,10 @@ def _make_api_request(function_name: str, params: dict) -> dict | str:
         AlphaVantageRateLimitError: When API rate limit is exceeded
     """
     from trade_integrations.tiered_api import TieredRequest, tiered_fetch
-    from trade_integrations.tiered_api.errors import TieredApiBudgetExhausted
+    from trade_integrations.tiered_api.errors import (
+        TieredApiBudgetExhausted,
+        TieredApiNotConfiguredError,
+    )
 
     api_params = params.copy()
     api_params.update({
@@ -141,6 +141,8 @@ def _make_api_request(function_name: str, params: dict) -> dict | str:
         return result.data
     except TieredApiBudgetExhausted as exc:
         raise AlphaVantageRateLimitError(str(exc)) from exc
+    except TieredApiNotConfiguredError as exc:
+        raise AlphaVantageNotConfiguredError(str(exc)) from exc
 
 
 

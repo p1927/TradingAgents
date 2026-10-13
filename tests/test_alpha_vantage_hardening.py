@@ -124,3 +124,18 @@ def test_every_function_declares_max_age_hours(monkeypatch, tmp_path):
     monkeypatch.setattr(ta, "tiered_fetch", lambda *a, **k: seen.update(k) or real(*a, **k))
     av._make_api_request("OVERVIEW", {"symbol": "AAPL"})
     assert "max_age_hours" in seen
+
+
+@pytest.mark.unit
+def test_missing_key_is_the_vendor_unavailable_error(monkeypatch, tmp_path):
+    """No key -> AlphaVantageNotConfiguredError (router skips to the next vendor), not a raw
+    tiered_api error, and get_api_key names the same env vars the registry does."""
+    monkeypatch.setenv("TRADE_STACK_HUB_DIR", str(tmp_path))
+    for var in ("ALPHA_VANTAGE_API_KEY", "ALPHAVANTAGE_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    with pytest.raises(av.AlphaVantageNotConfiguredError):
+        av.get_api_key()
+    with pytest.raises(av.AlphaVantageNotConfiguredError):
+        av._make_api_request("OVERVIEW", {"symbol": "AAPL"})
+    monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "k2")
+    assert av.get_api_key() == "k2"
