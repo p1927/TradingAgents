@@ -349,6 +349,13 @@ class OpenAIClient(BaseLLMClient):
                 continue
             llm_kwargs[key] = self.kwargs[key]
 
+        # Trade sidecar: a MiniMax endpoint inside Trade shares the account's one pace (D271).
+        if "http_client" not in llm_kwargs and "http_async_client" not in llm_kwargs:
+            from .trade_minimax_pace import paced_clients
+
+            if clients := paced_clients(llm_kwargs.get("base_url")):
+                llm_kwargs["http_client"], llm_kwargs["http_async_client"] = clients
+
         # The subclass (provider quirks) comes from the registry spec.
         return chat_cls(**llm_kwargs)
 

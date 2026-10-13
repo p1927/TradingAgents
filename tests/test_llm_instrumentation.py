@@ -83,3 +83,18 @@ def test_importerror_inside_the_model_call_is_not_retried():
     with pytest.raises(ImportError):
         instrumented.invoke("prompt")
     assert len(calls) == 1
+
+
+def test_minimax_debate_client_carries_trades_account_pace():
+    """Inside Trade the debate's MiniMax chat model takes a slot on the one account pace (D271);
+    another host is left untouched."""
+    pytest.importorskip("trade_integrations")
+    from tradingagents.llm_clients.openai_client import OpenAIClient
+
+    def hooks(client):
+        return client.root_client._client.event_hooks["request"]
+
+    llm = OpenAIClient("MiniMax-M3", "https://api.minimax.io/v1", provider="minimax", api_key="k").get_llm()
+    assert any(h.__name__ == "pace_httpx_request" for h in hooks(llm))
+    other = OpenAIClient("gpt-4o", "http://localhost:9/v1", provider="openai", api_key="k").get_llm()
+    assert not any(h.__name__ == "pace_httpx_request" for h in hooks(other))

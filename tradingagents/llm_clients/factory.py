@@ -82,6 +82,9 @@ def _instrument_llm_client(client: BaseLLMClient) -> BaseLLMClient:
             with llm_call_span(provider=provider, model=model, tier="debate") as meta:
                 result = original_invoke(input, config=config, **kwargs)
                 meta["tool_calls"] = len(getattr(result, "tool_calls", None) or [])
+                usage = getattr(result, "usage_metadata", None) or {}  # Trade's adapter_calls row
+                meta["input_tok"] = usage.get("input_tokens")
+                meta["output_tok"] = usage.get("output_tokens")
                 return result
 
         # LangChain chat models are pydantic models, and pydantic v2 rejects
