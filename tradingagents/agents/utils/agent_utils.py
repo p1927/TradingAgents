@@ -112,7 +112,9 @@ def resolve_instrument_identity(ticker: str) -> dict:
     try:
         info = yf.Ticker(normalize_symbol(ticker)).info or {}
     except Exception as exc:  # noqa: BLE001 — fail open, never block the run
-        logger.debug("Could not resolve instrument identity for %s: %s", ticker, exc)
+        # Fail open on purpose, but not silently: an empty identity makes every agent guess the company from price
+        # action (#814), so the lookup failure must be visible. Cached per ticker, so this logs once per process.
+        logger.warning("Could not resolve instrument identity for %s: %s", ticker, exc)
         return {}
 
     identity: dict[str, str] = {}
