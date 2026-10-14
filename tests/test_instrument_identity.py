@@ -54,7 +54,9 @@ class ResolveInstrumentIdentityTests(unittest.TestCase):
             "tradingagents.agents.utils.agent_utils.yf.Ticker",
             side_effect=RuntimeError("rate limited"),
         ):
-            self.assertEqual(resolve_instrument_identity("TOTDY"), {})
+            with self.assertLogs("tradingagents.agents.utils.agent_utils", level="WARNING") as logs:
+                self.assertEqual(resolve_instrument_identity("TOTDY"), {})
+        self.assertIn("Could not resolve instrument identity for TOTDY", logs.output[0])  # open, but not silent
 
     def test_result_is_cached(self):
         with patch("tradingagents.agents.utils.agent_utils.yf.Ticker") as mock:
