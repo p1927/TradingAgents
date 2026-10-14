@@ -56,6 +56,19 @@ def _isolate_config():
     config_module._config = copy.deepcopy(default_config.DEFAULT_CONFIG)
 
 
+@pytest.fixture(autouse=True)
+def _open_provider_allow_list(monkeypatch):
+    """Inside the Trade monorepo the D419 gate on ``_get_provider_kwargs`` only admits the
+    catalog's MiniMax/NVIDIA providers. These tests exercise the fork's per-provider kwarg
+    mapping (openai/google/...), not the gate, so they run it open; the gate itself is pinned by
+    Trade's tests/test_vibe_internals_seams.py. A standalone fork checkout has no trade_integrations."""
+    try:
+        import trade_integrations.dataflows.model_adapters.registry as registry
+    except ImportError:
+        return
+    monkeypatch.setattr(registry, "require_generative_provider", lambda provider: str(provider).lower())
+
+
 @pytest.fixture()
 def mock_llm_client():
     client = MagicMock()

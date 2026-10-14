@@ -1,3 +1,8 @@
+try:  # Trade monorepo: installs the TradingAgents patches incl. the D419 provider gate
+    import trade_integrations  # noqa: F401
+except ImportError:  # standalone fork checkout
+    pass
+
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 
