@@ -1,7 +1,8 @@
 try:  # Trade monorepo: installs the TradingAgents patches incl. the D419 provider gate
     import trade_integrations  # noqa: F401
-except ImportError:  # standalone fork checkout
-    pass
+except ImportError as _exc:  # standalone fork checkout: only a missing trade_integrations itself
+    if _exc.name != "trade_integrations":
+        raise
 
 import datetime
 import os

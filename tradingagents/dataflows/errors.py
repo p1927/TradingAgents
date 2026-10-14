@@ -8,6 +8,7 @@ these (or a thin vendor-named subclass) and needs no new ``except`` clause.
     VendorError
     ├── NoMarketDataError          no usable rows (empty result OR stale data)
     ├── VendorRateLimitError       transient throttle -> skip to next vendor
+    ├── VendorUnavailableError     service unreachable (outage, not missing data)
     └── VendorNotConfiguredError   missing API key/config -> vendor unavailable
 
 The number of types is the number of distinct router reactions, not the number
@@ -41,6 +42,13 @@ class NoMarketDataError(VendorError):
         if detail:
             msg += f": {detail}"
         super().__init__(msg)
+
+
+class VendorUnavailableError(VendorError):
+    """The vendor service could not be reached (connection refused, timeout, dropped connection).
+
+    Distinct from ``NoMarketDataError``: the service is down, not short of data for a symbol, so a
+    job record reads as an outage rather than as missing market data."""
 
 
 class VendorRateLimitError(VendorError):
