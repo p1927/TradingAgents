@@ -164,6 +164,8 @@ def _filter_csv_by_date_range(csv_data: str, start_date: str, end_date: str) -> 
     try:
         # Parse CSV data
         df = pd.read_csv(StringIO(csv_data))
+        if df.empty:  # a JSON error/notice body parses as a header with no rows
+            raise ValueError("no data rows")
 
         # Assume the first column is the date column (timestamp)
         date_col = df.columns[0]
@@ -179,6 +181,9 @@ def _filter_csv_by_date_range(csv_data: str, start_date: str, end_date: str) -> 
         return filtered_df.to_csv(index=False)
 
     except Exception as e:
-        # If filtering fails, return original data with a warning
-        print(f"Warning: Failed to filter CSV data by date range: {e}")
-        return csv_data
+        # Unfiltered data would leak rows after end_date into a historical run, and a body that
+        # cannot be date-filtered is a vendor error page, not prices: fail loud so the router
+        # logs it and moves to the next vendor.
+        raise ValueError(
+            f"Alpha Vantage response could not be date-filtered ({e}): {csv_data[:200]!r}"
+        ) from e

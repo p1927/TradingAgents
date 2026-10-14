@@ -47,8 +47,10 @@ def extract_rating(text: str) -> str | None:
 
     Two-pass strategy on the NFKC-normalized text (so fullwidth punctuation like
     ``Rating：Overweight`` is matched the same as ASCII):
-    1. An explicit "Rating: X" label (tolerant of markdown bold).
-    2. The first standalone 5-tier rating word found anywhere.
+    1. An explicit "Rating: X" label (tolerant of markdown bold). The first label wins.
+    2. A standalone 5-tier rating word, only when the text names exactly ONE distinct tier.
+       Prose naming several ("not Buy, more like Sell") is ambiguous: ``None`` (REVIEW) rather
+       than guessing the first word, which would drive a trade view from the wrong tier.
     """
     if not text:
         return None
@@ -59,11 +61,8 @@ def extract_rating(text: str) -> str | None:
         if m and m.group(1).lower() in _RATING_SET:
             return m.group(1).capitalize()
 
-    m = _RATING_WORD_RE.search(norm)
-    if m:
-        return m.group(1).capitalize()
-
-    return None
+    words = {w.capitalize() for w in _RATING_WORD_RE.findall(norm)}
+    return words.pop() if len(words) == 1 else None
 
 
 def parse_rating(text: str, default: str = "Hold") -> str:

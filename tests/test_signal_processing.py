@@ -138,3 +138,17 @@ class TestGraphSignalContract:
 
     def test_graph_returns_rating(self):
         assert self._bare_graph().process_signal("**Rating**: Sell") == "Sell"
+
+
+@pytest.mark.unit
+class TestAmbiguousProseIsReview:
+    """Unlabelled prose that names several tiers must not be read as its first word."""
+
+    def test_two_tiers_in_prose_is_none_not_first_word(self):
+        assert extract_rating("This is not a Buy; the case is for a Sell.") is None
+
+    def test_single_tier_in_prose_still_parses(self):
+        assert extract_rating("We would rather Hold here, and Hold again later.") == "Hold"
+
+    def test_graph_signal_for_ambiguous_prose_is_review(self):
+        assert SignalProcessor().process_signal("Buy or Sell, hard to say.") == RATING_REVIEW
