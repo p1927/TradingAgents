@@ -25,6 +25,7 @@ See: https://github.com/TauricResearch/TradingAgents/issues/796
 """
 
 from datetime import datetime, timedelta
+from typing import Callable, Optional, Tuple
 
 from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -42,6 +43,14 @@ from tradingagents.agents.utils.structured import (
 )
 from tradingagents.dataflows.reddit import fetch_reddit_posts
 from tradingagents.dataflows.stocktwits import fetch_stocktwits_messages
+
+
+#: Extension seam for a host application (the Trade monorepo sets it; upstream leaves it ``None``):
+#: ``(state, start_date, end_date) -> (extra_data_blocks, extra_framing)``. ``extra_data_blocks`` is
+#: markdown placed after the Reddit block (more pre-fetched sources), ``extra_framing`` is markdown placed
+#: before the output fields. One hook instead of a forked copy of this analyst, so upstream fixes to it
+#: reach the host without a hand re-copy.
+SENTIMENT_EXTENSION: Optional[Callable[[dict, str, str], Tuple[str, str]]] = None
 
 
 def _seven_days_back(trade_date: str) -> str:
@@ -74,6 +83,9 @@ def create_sentiment_analyst(llm):
             ticker, limit=30, start_date=start_date, end_date=end_date
         )
         reddit_block = fetch_reddit_posts(ticker, start_date=start_date, end_date=end_date)
+        extra_data_block, extra_framing = (
+            SENTIMENT_EXTENSION(state, start_date, end_date) if SENTIMENT_EXTENSION else ("", "")
+        )
 
         system_message = _build_system_message(
             ticker=ticker,
@@ -82,6 +94,8 @@ def create_sentiment_analyst(llm):
             news_block=news_block,
             stocktwits_block=stocktwits_block,
             reddit_block=reddit_block,
+            extra_data_block=extra_data_block,
+            extra_framing=extra_framing,
         )
 
         prompt = ChatPromptTemplate.from_messages(
@@ -135,9 +149,12 @@ def _build_system_message(
     news_block: str,
     stocktwits_block: str,
     reddit_block: str,
+    extra_data_block: str = "",
+    extra_framing: str = "",
 ) -> str:
     """Assemble the sentiment-analyst system message with structured data blocks."""
-    return f"""You are a financial market sentiment analyst. Your task is to produce a comprehensive sentiment report for {ticker} covering the period from {start_date} to {end_date}, drawing on three complementary data sources that have already been collected for you.
+    source_count = "three" if not extra_data_block else "several"
+    return f"""You are a financial market sentiment analyst. Your task is to produce a comprehensive sentiment report for {ticker} covering the period from {start_date} to {end_date}, drawing on {source_count} complementary data sources that have already been collected for you.
 
 ## Data sources (pre-fetched, in this prompt)
 
@@ -161,7 +178,7 @@ Community discussion. Engagement signal via upvote score and comment count. Subr
 <start_of_reddit>
 {reddit_block}
 <end_of_reddit>
-
+{extra_data_block}
 ## How to analyze this data (best practices)
 
 1. **Read the StockTwits Bullish/Bearish ratio as a leading retail-sentiment signal.** A 70/30 bullish/bearish split is moderately bullish; ≥90/10 may indicate over-extension and contrarian risk; 50/50 is uncertainty. Sample size matters — base rates on the actual message count, not percentages alone.
@@ -179,7 +196,7 @@ Community discussion. Engagement signal via upvote score and comment count. Subr
 7. **Identify catalysts and risks** that emerge across sources — news of upcoming earnings, product launches, competitive threats, macro headlines, etc.
 
 8. **Past sentiment is not predictive.** Frame your conclusions as signal for the trader to weigh alongside fundamentals and technicals, not as a price call.
-
+{extra_framing}
 ## Output fields
 
 Fill the following fields:

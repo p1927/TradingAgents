@@ -1,3 +1,5 @@
+from typing import Callable, Optional, Tuple
+
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from tradingagents.agents.utils.agent_utils import (
@@ -8,6 +10,13 @@ from tradingagents.agents.utils.agent_utils import (
     get_news,
     get_prediction_markets,
 )
+
+
+#: Extension seam for a host application (the Trade monorepo sets it; upstream leaves it ``None``):
+#: ``(state) -> (extra_tools, extra_guidance)``. The tools are bound next to the built-in ones and
+#: ``extra_guidance`` (how to use them) is added to the system message before the closing instructions.
+#: One hook instead of a forked copy of this analyst.
+NEWS_EXTENSION: Optional[Callable[[dict], Tuple[list, str]]] = None
 
 
 def create_news_analyst(llm):
@@ -23,9 +32,11 @@ def create_news_analyst(llm):
             get_macro_indicators,
             get_prediction_markets,
         ]
+        extra_tools, extra_guidance = NEWS_EXTENSION(state) if NEWS_EXTENSION else ([], "")
+        tools = tools + list(extra_tools)
 
         system_message = (
-            f"You are a news researcher tasked with analyzing recent news and trends over the past week. Please write a comprehensive report of the current state of the world that is relevant for trading and macroeconomics. Use the available tools: get_news(ticker, start_date, end_date) for {asset_label}-specific news by ticker symbol, get_global_news(curr_date, look_back_days, limit) for broader macroeconomic news, get_macro_indicators(indicator, curr_date, look_back_days) to ground macro commentary in actual data from FRED (e.g. 'cpi', 'core_pce', 'unemployment', 'fed_funds_rate', '10y_treasury', 'yield_curve'), and get_prediction_markets(topic, limit) for live market-implied probabilities of forward-looking events (e.g. 'Fed rate cut', 'recession 2026', geopolitical or sector events). Provide specific, actionable insights with supporting evidence to help traders make informed decisions."
+            f"You are a news researcher tasked with analyzing recent news and trends over the past week. Please write a comprehensive report of the current state of the world that is relevant for trading and macroeconomics. Use the available tools: get_news(ticker, start_date, end_date) for {asset_label}-specific news by ticker symbol, get_global_news(curr_date, look_back_days, limit) for broader macroeconomic news, get_macro_indicators(indicator, curr_date, look_back_days) to ground macro commentary in actual data from FRED (e.g. 'cpi', 'core_pce', 'unemployment', 'fed_funds_rate', '10y_treasury', 'yield_curve'), and get_prediction_markets(topic, limit) for live market-implied probabilities of forward-looking events (e.g. 'Fed rate cut', 'recession 2026', geopolitical or sector events). " + extra_guidance + "Provide specific, actionable insights with supporting evidence to help traders make informed decisions."
             + """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."""
             + get_language_instruction()
         )

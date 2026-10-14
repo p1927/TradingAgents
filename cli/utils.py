@@ -31,7 +31,8 @@ def is_valid_ticker_input(value: str) -> bool:
     allowed (it defaults to SPY downstream).
     """
     v = value.strip()
-    return not v or (all(ch.isalnum() or ch in "._-^=" for ch in v) and len(v) <= 32)
+    # The ticker becomes a results-directory name (cli/main.py), so ``.``/``..`` must never pass.
+    return not v or (all(ch.isalnum() or ch in "._-^=" for ch in v) and len(v) <= 32 and v != "." and ".." not in v)
 
 
 def get_ticker() -> str:

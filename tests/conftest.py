@@ -69,6 +69,18 @@ def _open_provider_allow_list(monkeypatch):
     monkeypatch.setattr(registry, "require_generative_provider", lambda provider: str(provider).lower())
 
 
+@pytest.fixture(autouse=True)
+def _upstream_pure_analysts(monkeypatch):
+    """The Trade monorepo installs extension hooks on the sentiment/news analysts (RSS block, research
+    tools). These tests pin the fork's own analysts, so they run with the hooks off; the hooked
+    behaviour is pinned by Trade's tests/test_vibe_internals_seams.py."""
+    import tradingagents.agents.analysts.news_analyst as news
+    import tradingagents.agents.analysts.sentiment_analyst as sentiment
+
+    monkeypatch.setattr(sentiment, "SENTIMENT_EXTENSION", None)
+    monkeypatch.setattr(news, "NEWS_EXTENSION", None)
+
+
 @pytest.fixture()
 def mock_llm_client():
     client = MagicMock()
