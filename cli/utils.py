@@ -69,14 +69,14 @@ def normalize_ticker_symbol(ticker: str) -> str:
     Delegates to the data layer's ``normalize_symbol`` so the symbol the CLI
     passes through the pipeline is exactly the one the data path will price
     (e.g. ``BTCUSD`` -> ``BTC-USD``, ``XAUUSD`` -> ``GC=F``). Falls back to the
-    plain upper-case if the data layer is unavailable.
+    plain upper-case only if the data layer cannot be imported.
     """
     try:
         from tradingagents.dataflows.symbol_utils import normalize_symbol
-
-        return normalize_symbol(ticker)
-    except Exception:
+    except ImportError:
         return ticker.strip().upper()
+    # Only the import is optional; a normaliser that raises must not silently change the symbol priced.
+    return normalize_symbol(ticker)
 
 
 def detect_asset_type(ticker: str) -> AssetType:
@@ -367,6 +367,22 @@ def _llm_provider_table() -> list[tuple[str, str, str | None]]:
     ]
 
 
+def _allowed_provider_keys() -> set[str] | None:
+    """The D419 provider allow-list, or ``None`` in a standalone fork checkout (no Trade install).
+
+    Same list ``trade_integrations.register._get_provider_kwargs_patched`` enforces at graph build
+    time; the menu and the key prompt use it so a provider that will be refused is never offered
+    and never gets a pasted key persisted to ``.env``.
+    """
+    try:
+        from trade_integrations.dataflows.model_adapters.registry import list_adapters
+    except ImportError as exc:
+        if exc.name != "trade_integrations":
+            raise
+        return None
+    return {s.provider for s in list_adapters("generative") if s.enabled}
+
+
 def provider_default_url(provider_key: str) -> str | None:
     """Return the default backend URL for a provider key, or None if unknown."""
     key = provider_key.lower()
@@ -406,6 +422,9 @@ def prompt_openai_compatible_url() -> str:
 def select_llm_provider() -> tuple[str, str | None]:
     """Select the LLM provider and its API endpoint."""
     PROVIDERS = _llm_provider_table()
+    allowed = _allowed_provider_keys()
+    if allowed is not None:
+        PROVIDERS = [row for row in PROVIDERS if row[1] in allowed]
 
     choice = questionary.select(
         "Select your LLM Provider:",
@@ -626,6 +645,13 @@ def ensure_api_key(provider: str) -> str | None:
     existing = os.environ.get(env_var)
     if existing:
         return existing
+
+    allowed = _allowed_provider_keys()
+    if allowed is not None and provider.strip().lower() not in allowed:
+        # Gate BEFORE prompting: a key pasted for a provider that is then refused (D419) must never be persisted.
+        raise ValueError(
+            f"LLM provider {provider!r} is not allowed: choose one of {sorted(allowed)} (D419); no key was requested"
+        )
 
     console.print(
         f"\n[yellow]{env_var} is not set in your environment.[/yellow]"

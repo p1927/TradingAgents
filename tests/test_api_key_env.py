@@ -71,7 +71,10 @@ def cli_utils(monkeypatch):
     import importlib
 
     import cli.utils as cli_utils_module
-    return importlib.reload(cli_utils_module)
+    reloaded = importlib.reload(cli_utils_module)
+    # These tests exercise the standalone prompt/persist behaviour; the D419 gate has its own tests.
+    monkeypatch.setattr(reloaded, "_allowed_provider_keys", lambda: None)
+    return reloaded
 
 
 def test_ensure_api_key_returns_existing(monkeypatch, cli_utils):
