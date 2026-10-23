@@ -22,9 +22,13 @@ def to_utc(dt: datetime) -> datetime:
 def in_window(pub_dt: datetime | None, start_dt: datetime, end_dt: datetime) -> bool:
     """Whether an item belongs in the half-open window ``[start, end + 1 day)``.
 
+    The day is the bounds' own: a naive bound is a UTC day; a zone-aware one (Trade passes the market's
+    midnight, e.g. IST) is a day of that zone, and the day is added on its WALL clock so a DST day is
+    23/25 h. A replay of IST day D therefore never reads a headline stamped after 00:00 IST D+1.
+
     ``pub_dt`` None means undated: kept only when the window reaches the present.
     """
-    end = to_utc(end_dt)
+    end_exclusive = to_utc(end_dt + timedelta(days=1))
     if pub_dt is not None:
-        return to_utc(start_dt) <= to_utc(pub_dt) < end + timedelta(days=1)
-    return end >= datetime.now(timezone.utc) - timedelta(days=1)
+        return to_utc(start_dt) <= to_utc(pub_dt) < end_exclusive
+    return end_exclusive >= datetime.now(timezone.utc)
