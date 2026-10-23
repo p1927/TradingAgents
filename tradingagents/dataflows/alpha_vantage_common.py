@@ -26,15 +26,13 @@ class AlphaVantageNotConfiguredError(VendorNotConfiguredError):
 
 
 def get_api_key() -> str:
-    """Alpha Vantage key, resolved through Trade's tiered_api registry (the one place that
-    names the env vars). Not configured -> the vendor-router's "vendor unavailable" error."""
-    from trade_integrations.tiered_api.errors import TieredApiNotConfiguredError
-    from trade_integrations.tiered_api.registry import resolve_credential
-
-    try:
-        return resolve_credential("alpha_vantage")
-    except TieredApiNotConfiguredError as exc:
-        raise AlphaVantageNotConfiguredError(str(exc)) from exc
+    """Retrieve the API key for Alpha Vantage from environment variables."""
+    api_key = os.getenv("ALPHA_VANTAGE_API_KEY")
+    if not api_key:
+        raise AlphaVantageNotConfiguredError(
+            "ALPHA_VANTAGE_API_KEY environment variable is not set."
+        )
+    return api_key
 
 def format_datetime_for_api(date_input) -> str:
     """Convert various date formats to YYYYMMDDTHHMM format required by Alpha Vantage API."""
@@ -61,88 +59,57 @@ class AlphaVantageRateLimitError(VendorRateLimitError):
     """Raised when the Alpha Vantage API rate limit is exceeded."""
     pass
 
-# D381: every tiered_api call declares its own freshness. Fundamentals/insider reports change
-# quarterly -> the source TTL (None); prices, indicators and news sentiment are same-day history -> 12h.
-# A function missing here raises KeyError rather than silently inheriting a freshness.
-_MAX_AGE_HOURS: dict[str, float | None] = {
-    "OVERVIEW": None,
-    "BALANCE_SHEET": None,
-    "CASH_FLOW": None,
-    "INCOME_STATEMENT": None,
-    "INSIDER_TRANSACTIONS": None,
-    "TIME_SERIES_DAILY": 12,
-    "TIME_SERIES_DAILY_ADJUSTED": 12,
-    "NEWS_SENTIMENT": 12,
-    "SMA": 12,
-    "EMA": 12,
-    "MACD": 12,
-    "RSI": 12,
-    "BBANDS": 12,
-    "ATR": 12,
-}
-
-
 def _make_api_request(function_name: str, params: dict) -> dict | str:
     """Helper function to make API requests and handle responses.
 
     Raises:
         AlphaVantageRateLimitError: When API rate limit is exceeded
     """
-    from trade_integrations.tiered_api import TieredRequest, tiered_fetch
-    from trade_integrations.tiered_api.errors import (
-        TieredApiBudgetExhausted,
-        TieredApiNotConfiguredError,
-    )
-
+    # Create a copy of params to avoid modifying the original
     api_params = params.copy()
     api_params.update({
         "function": function_name,
+        "apikey": get_api_key(),
         "source": "trading_agents",
     })
 
+    # Handle entitlement parameter if present in params or global variable
     current_entitlement = globals().get('_current_entitlement')
     entitlement = api_params.get("entitlement") or current_entitlement
 
     if entitlement:
         api_params["entitlement"] = entitlement
     elif "entitlement" in api_params:
+        # Remove entitlement if it's None or empty
         api_params.pop("entitlement", None)
 
-    req = TieredRequest(url=API_BASE_URL, params=dict(api_params))
+    response = requests.get(API_BASE_URL, params=api_params, timeout=REQUEST_TIMEOUT)
+    response.raise_for_status()
 
-    def _validate_response_text(response_text: str) -> str:
-        try:
-            response_json = json.loads(response_text)
-        except json.JSONDecodeError:
-            return response_text
+    response_text = response.text
 
-        notice = response_json.get("Information") or response_json.get("Note")
-        if notice:
-            low = notice.lower()
-            if any(m in low for m in ("rate limit", "requests per day", "call frequency", "premium")):
-                raise AlphaVantageRateLimitError(f"Alpha Vantage rate limit exceeded: {notice}")
-            if "api key" in low or "apikey" in low:
-                raise AlphaVantageNotConfiguredError(
-                    f"Alpha Vantage API key invalid or missing: {notice}"
-                )
+    # Error responses are JSON; data responses are usually CSV (or data-keyed
+    # JSON). A non-JSON body is normal data.
+    try:
+        response_json = json.loads(response_text)
+    except json.JSONDecodeError:
         return response_text
 
-    def _fetch_raw() -> str:
-        call_params = api_params.copy()
-        call_params["apikey"] = get_api_key()
-        response = requests.get(API_BASE_URL, params=call_params, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
-        return _validate_response_text(response.text)
+    # Alpha Vantage reports problems via "Information" / "Note". Classify so a
+    # genuine rate limit and an invalid/missing key aren't conflated (#991):
+    # rate-limit phrasing is checked first because those notices also mention
+    # "API key" ("your API key ... 25 requests per day").
+    notice = response_json.get("Information") or response_json.get("Note")
+    if notice:
+        low = notice.lower()
+        if any(m in low for m in ("rate limit", "requests per day", "call frequency", "premium")):
+            raise AlphaVantageRateLimitError(f"Alpha Vantage rate limit exceeded: {notice}")
+        if "api key" in low or "apikey" in low:
+            # Reuse the existing "not configured" error so a bad key surfaces as
+            # a real, actionable failure rather than a mislabeled rate limit (#991).
+            raise AlphaVantageNotConfiguredError(f"Alpha Vantage API key invalid or missing: {notice}")
 
-    try:
-        result = tiered_fetch(
-            "alpha_vantage", req, _fetch_raw, max_age_hours=_MAX_AGE_HOURS[function_name]
-        )
-        return result.data
-    except TieredApiBudgetExhausted as exc:
-        raise AlphaVantageRateLimitError(str(exc)) from exc
-    except TieredApiNotConfiguredError as exc:
-        raise AlphaVantageNotConfiguredError(str(exc)) from exc
+    return response_text
 
 
 
